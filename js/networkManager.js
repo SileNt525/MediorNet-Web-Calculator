@@ -321,12 +321,11 @@ class NetworkManager {
     getTopologyData() {
         const nodes = this.devices.map(dev => ({
             data: {
-                id: dev.id.toString(), // Cytoscape ID 通常是字符串
-                label: `<span class="math-inline">\{dev\.name\}\\n\(</span>{dev.type})`, // 节点标签
-                deviceType: dev.type, // 自定义数据，用于样式
-                // 可以添加其他需要的数据，如端口总数等
+                id: dev.id.toString(),
+                // 问题很可能在这里：label 的值可能包含了 HTML
+                label: `${dev.name}\n(${dev.type})`, // <--- 检查这里
+                deviceType: dev.type,
             }
-            // position: { x: ..., y: ... } // 初始位置可以后续由布局算法或用户拖拽决定
         }));
 
         const edges = [];
