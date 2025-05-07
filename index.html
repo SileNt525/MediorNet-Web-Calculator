@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediorNet TDM 连接计算器 (Web)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/device.js"></script>
+    <script src="js/networkManager.js"></script>
+    <script src="js/uiController.js"></script>
+    <script src="js/main.js"></script>
+    <style>
+        /* 可以在这里添加一些全局或特定元素的 CSS */
+        body { font-family: sans-serif; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+     <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+     <style>
+         /* ... existing styles ... */
+         #cy { /*确保绘图容器有明确的尺寸*/
+             width: 100%;
+             height: 100%;
+             display: block;
+             border: 1px solid #ddd; /*保留边框以便调试*/
+         }
+     </style>
+</head>
+<body class="bg-gray-100 p-4">
+    <h1 class="text-2xl font-bold mb-4 text-center">MediorNet TDM 连接计算器 (Web版)</h1>
+
+    <div class="flex flex-col md:flex-row gap-4">
+
+        <div class="w-full md:w-1/3 lg:w-1/4 space-y-4">
+
+            <div class="bg-white p-4 rounded shadow border border-gray-300">
+                <h2 class="text-lg font-semibold mb-3 border-b pb-2">添加新设备</h2>
+                <div class="space-y-2">
+                    <div>
+                        <label for="device-type" class="block text-sm font-medium text-gray-700">类型:</label>
+                        <select id="device-type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                            </select>
+                    </div>
+                    <div>
+                        <label for="device-name" class="block text-sm font-medium text-gray-700">名称:</label>
+                        <input type="text" id="device-name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                    </div>
+                    <div id="port-inputs">
+                        </div>
+                    <button id="add-device-btn" class="w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-2">
+                        添加设备
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded shadow border border-gray-300">
+                 <h2 class="text-lg font-semibold mb-3 border-b pb-2">设备列表</h2>
+                 <input type="text" id="device-filter" placeholder="按名称或类型过滤..." class="mb-2 block w-full rounded-md border-gray-300 shadow-sm text-sm p-1">
+                 <div class="overflow-x-auto max-h-60 overflow-y-auto">
+                     <table class="min-w-full divide-y divide-gray-200 text-sm">
+                         <thead class="bg-gray-50 sticky top-0">
+                             <tr>
+                                 <th class="px-2 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">名称</th>
+                                 <th class="px-2 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">类型</th>
+                                 <th class="px-1 py-2 text-center font-medium text-gray-500 uppercase tracking-wider">MPO</th>
+                                 <th class="px-1 py-2 text-center font-medium text-gray-500 uppercase tracking-wider">LC</th>
+                                 <th class="px-1 py-2 text-center font-medium text-gray-500 uppercase tracking-wider">SFP+</th>
+                                 <th class="px-1 py-2 text-center font-medium text-gray-500 uppercase tracking-wider">连接</th>
+                                 <th class="px-1 py-2 text-center font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                             </tr>
+                         </thead>
+                         <tbody id="device-table-body" class="bg-white divide-y divide-gray-200">
+                             </tbody>
+                     </table>
+                 </div>
+                 <div class="flex justify-between mt-2">
+                    <button id="remove-device-btn" class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-sm disabled:opacity-50" disabled>移除选中</button>
+                    <button id="clear-devices-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-1 px-3 rounded text-sm disabled:opacity-50" disabled>清空所有</button>
+                 </div>
+                 <div id="port-totals" class="text-right text-xs mt-2 font-semibold">总计: MPO: 0, LC: 0, SFP+: 0</div>
+            </div>
+
+            <div class="bg-white p-4 rounded shadow border border-gray-300 opacity-50">
+                <h2 class="text-lg font-semibold mb-3 border-b pb-2">文件操作 (待实现)</h2>
+                <div class="grid grid-cols-2 gap-2">
+                    <button class="bg-green-500 text-white font-bold py-1 px-3 rounded text-sm" disabled>保存配置</button>
+                    <button class="bg-yellow-500 text-white font-bold py-1 px-3 rounded text-sm" disabled>加载配置</button>
+                    <button class="bg-purple-500 text-white font-bold py-1 px-3 rounded text-sm" disabled>导出列表</button>
+                    <button class="bg-purple-500 text-white font-bold py-1 px-3 rounded text-sm" disabled>导出拓扑</button>
+                </div>
+                 <button class="w-full bg-purple-500 text-white font-bold py-1 px-3 rounded text-sm mt-2" disabled>导出报告 (HTML)</button>
+            </div>
+
+        </div>
+
+        <div class="w-full md:w-2/3 lg:w-3/4">
+
+            <div class="bg-white p-3 rounded shadow border border-gray-300 mb-4 flex flex-wrap items-center gap-2 text-sm">
+                <label for="topology-mode">模式:</label>
+                <select id="topology-mode" class="rounded-md border-gray-300 shadow-sm p-1">
+                    <option>Mesh</option>
+                    <option>环形</option>
+                </select>
+                <label for="layout-mode">布局:</label>
+                <select id="layout-mode" class="rounded-md border-gray-300 shadow-sm p-1">
+                    <option>Spring</option>
+                    <option>Circular</option>
+                    <option>Kamada-Kawai</option>
+                     <option>Random</option>
+                     <option>Shell</option>
+                </select>
+                <button id="calculate-btn" class="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-1 px-3 rounded disabled:opacity-50" disabled>计算连接</button>
+                <button id="fill-mesh-btn" class="bg-teal-500 hover:bg-teal-700 text-white font-bold py-1 px-3 rounded disabled:opacity-50" disabled>填充(Mesh)</button>
+                <button id="fill-ring-btn" class="bg-teal-500 hover:bg-teal-700 text-white font-bold py-1 px-3 rounded disabled:opacity-50" disabled>填充(环形)</button>
+                 <button id="clear-connections-btn" class="bg-orange-500 hover:bg-orange-700 text-white font-bold py-1 px-3 rounded disabled:opacity-50 ml-auto" disabled>清空连接</button>
+            </div>
+
+            <div>
+                <div class="border-b border-gray-200">
+                    <nav class="-mb-px flex space-x-4" aria-label="Tabs">
+                        <button class="tab-button active py-2 px-4 bg-white inline-flex items-center text-sm font-medium text-blue-600 border-b-2 border-blue-500" data-target="connections-tab">连接列表</button>
+                        <button class="tab-button py-2 px-4 inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 border-b-2 border-transparent" data-target="topology-tab">拓扑图</button>
+                        <button class="tab-button py-2 px-4 inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 border-b-2 border-transparent" data-target="edit-tab">手动编辑</button>
+                    </nav>
+                </div>
+
+                <div class="mt-4">
+                    <div id="connections-tab" class="tab-content active bg-white p-4 rounded shadow border border-gray-300 min-h-[400px] max-h-[600px] overflow-y-auto">
+                        <h3 class="text-md font-semibold mb-2">连接列表:</h3>
+                        <pre id="connections-output" class="text-xs whitespace-pre-wrap">无连接。</pre>
+                    </div>
+                    <div id="topology-tab" class="tab-content bg-white p-1 rounded shadow border border-gray-300 min-h-[400px]" style="height: 600px;">
+                        <div id="cy" style="width: 100%; height: 100%; border: 1px solid #ddd;"></div>
+                    </div>
+                    <div id="edit-tab" class="tab-content bg-white p-4 rounded shadow border border-gray-300 min-h-[400px]">
+                         <h3 class="text-md font-semibold mb-2">手动添加/移除连接:</h3>
+                         <p class="text-gray-500">手动编辑功能待实现...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // 简单的 Tab 切换逻辑
+        const tabs = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const target = tab.getAttribute('data-target');
+
+                tabs.forEach(t => {
+                    t.classList.remove('active', 'bg-white', 'text-blue-600', 'border-blue-500');
+                    t.classList.add('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'border-transparent');
+                });
+                tab.classList.add('active', 'bg-white', 'text-blue-600', 'border-blue-500');
+                 tab.classList.remove('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'border-transparent');
+
+
+                tabContents.forEach(content => {
+                    if (content.id === target) {
+                        content.classList.add('active');
+                    } else {
+                        content.classList.remove('active');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
