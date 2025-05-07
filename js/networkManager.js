@@ -314,15 +314,92 @@ class NetworkManager {
     }
 
     /** 获取图形数据 - 需要适配 Web 可视化库 */
-    getGraph() {
-        // TODO: 返回适合 Cytoscape.js 使用的数据结构
-        // 例如: { nodes: [...], edges: [...] }
-        console.log("获取图数据占位符");
-        // 临时返回基本信息
-        return {
-            nodes: this.devices.map(d => ({ data: { id: d.id.toString(), label: `${d.name}\n(${d.type})`, type: d.type } })),
-            edges: this.connections.map((conn, i) => ({ data: { id: `e${i}`, source: conn[0].id.toString(), target: conn[2].id.toString(), label: conn[4] } }))
-        };
+    /**
+     * 获取适合 Cytoscape.js 使用的拓扑数据。
+     * @returns {{nodes: Array, edges: Array}} 包含节点和边数据的对象。
+     */
+    getTopologyData() {
+        const nodes = this.devices.map(dev => ({
+            data: {
+                id: dev.id.toString(), // Cytoscape ID 通常是字符串
+                label: `<span class="math-inline">\{dev\.name\}\\n\(</span>{dev.type})`, // 节点标签
+                deviceType: dev.type, // 自定义数据，用于样式
+                // 可以添加其他需要的数据，如端口总数等
+            }
+            // position: { x: ..., y: ... } // 初始位置可以后续由布局算法或用户拖拽决定
+        }));
+
+        const edges = [];
+        // 需要聚合连接，相同设备对之间的多种连接类型显示为一条边或多条平行边
+        const edgeAggregator = {}; // key: "devId1-devId2", value: { types: {}, count: 0, ports: [] }
+
+        this.connections.forEach(conn => {
+            const [dev1, port1, dev2, port2, connTypeStr] = conn;
+            // 确保边的 key 顺序一致
+            const id1 = dev1.id;
+            const id2 = dev2.id;
+            const edgeKey = id1 < id2 ? `<span class="math-inline">\{id1\}\-</span>{id2}` : `<span class="math-inline">\{id2\}\-</span>{id1}`;
+
+            if (!edgeAggregator[edgeKey]) {
+                edgeAggregator[edgeKey] = { types: {}, count: 0, ports: [] };
+            }
+
+            // 聚合连接类型计数
+            const baseConnType = connTypeStr.split(' ')[0]; // e.g., "LC-LC"
+            if (!edgeAggregator[edgeKey].types[baseConnType]) {
+                edgeAggregator[edgeKey].types[baseConnType] = { count: 0, fullType: connTypeStr };
+            }
+            edgeAggregator[edgeKey].types[baseConnType].count++;
+            edgeAggregator[edgeKey].count++;
+
+            // 记录端口信息 (确保 source/target 对应 key 的顺序)
+            if (id1 < id2) {
+                 edgeAggregator[edgeKey].ports.push({ sourcePort: port1, targetPort: port2, type: connTypeStr });
+            } else {
+                 edgeAggregator[edgeKey].ports.push({ sourcePort: port2, targetPort: port1, type: connTypeStr });
+            }
+        });
+
+        // 构建 Cytoscape 边数据
+        Object.keys(edgeAggregator).forEach((edgeKey, index) => {
+            const [sourceId, targetId] = edgeKey.split('-');
+            const edgeData = edgeAggregator[edgeKey];
+
+            // 创建边标签，显示聚合后的类型和数量
+            const labelParts = Object.values(edgeData.types).map(typeInfo => `<span class="math-inline">\{typeInfo\.fullType\} x</span>{typeInfo.count}`);
+            const edgeLabel = labelParts.join('\n');
+
+            // 决定边的类型或样式（基于第一个连接类型）
+            const firstType = Object.values(edgeData.types)[0].fullType;
+            let edgeStyleClass = 'default-edge'; // 用于 CSS 或样式选择器
+             if (firstType.startsWith('LC-LC')) edgeStyleClass = 'lc-lc-edge';
+             else if (firstType.startsWith('MPO-MPO')) edgeStyleClass = 'mpo-mpo-edge';
+             else if (firstType.startsWith('MPO-SFP')) edgeStyleClass = 'mpo-sfp-edge';
+             else if (firstType.startsWith('SFP-SFP')) edgeStyleClass = 'sfp-sfp-edge';
+
+            edges.push({
+                data: {
+                    id: `e${index}`, // 唯一边 ID
+                    source: sourceId, // 源节点 ID (字符串)
+                    target: targetId, // 目标节点 ID (字符串)
+                    label: edgeLabel, // 边标签
+                    count: edgeData.count, // 总连接数
+                    ports: edgeData.ports, // 详细端口信息
+                    styleClass: edgeStyleClass // 用于区分样式的类名
+                }
+            });
+        });
+
+        return { nodes, edges };
+    }
+
+    // _updateGraph 方法现在可以调用 getTopologyData 并触发 UI 更新
+    _updateGraph() {
+        // 这个函数本身不直接绘图，而是通知 UI 需要更新
+        // 在 UIController 中会获取数据并重新渲染图形
+        console.log("图数据模型已更新，需要通知 UI 重绘。");
+        // 如果 UIController 有一个专门的更新图的方法，可以在这里触发事件或直接调用
+        // 例如: this.emit('graphNeedsUpdate');
     }
 
 

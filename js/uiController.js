@@ -23,6 +23,12 @@ class UIController {
         this.fillRingBtn = document.getElementById('fill-ring-btn');
         this.clearConnectionsBtn = document.getElementById('clear-connections-btn');
         this.connectionsOutput = document.getElementById('connections-output'); // 获取连接输出区域
+        this.cy = null; // 添加用于存储 Cytoscape 实例的属性
+        this.topologyLayout = 'Spring'; // 存储当前布局模式
+        this.nodePositions = {}; // 存储节点位置 { nodeId: { x: number, y: number } }
+        this.layoutCombo = document.getElementById('layout-mode'); // 获取布局下拉框
+
+        console.log("UIController constructor called.");
 
         // 确认元素获取
         if (!this.deviceTypeSelect) console.error("Element not found: device-type");
@@ -79,9 +85,251 @@ class UIController {
                 this.showDeviceDetails(deviceId);
             }
         });
+        // --- 添加 Cytoscape 初始化 ---
+        this.initializeCytoscape();
+        // --------------------------
 
+        // --- 事件监听 ---
+        // ... (之前的事件监听) ...
+        // 监听布局选择变化
+        this.layoutCombo.addEventListener('change', (event) => {
+            this.topologyLayout = event.target.value; // 更新布局模式
+            this.nodePositions = {}; // 切换布局时通常重置位置
+            this.updateTopologyGraph(); // 使用新布局重新绘制
+        });
 
         console.log("UI Controller Initialized method finished.");
+
+    }
+
+    // --- 新增：初始化 Cytoscape ---
+    initializeCytoscape() {
+        try {
+             this.cy = cytoscape({
+                 container: document.getElementById('cy'), // 绘图容器
+                 elements: [], // 初始为空
+                 style: [ // 定义样式
+                     {
+                         selector: 'node',
+                         style: {
+                             'background-color': '#ccc', // 默认颜色
+                             'label': 'data(label)', // 显示节点标签
+                             'text-valign': 'bottom',
+                             'text-halign': 'center',
+                             'font-size': '9px',
+                             'text-wrap': 'wrap', // 允许多行标签
+                             'text-max-width': '80px',
+                             'height': 40, // 固定大小或根据数据调整
+                             'width': 60,
+                             'shape': 'rectangle' // 默认为矩形
+                         }
+                     },
+                     // 为不同设备类型定义样式
+                      {
+                          selector: 'node[deviceType = "' + DEV_UHD + '"]', // 使用全局常量
+                          style: { 'background-color': 'skyblue' }
+                      },
+                      {
+                          selector: 'node[deviceType = "' + DEV_HORIZON + '"]',
+                          style: { 'background-color': 'lightcoral' }
+                      },
+                      {
+                         selector: 'node[deviceType = "' + DEV_MN + '"]',
+                         style: { 'background-color': 'lightgreen' }
+                      },
+                      {
+                          selector: 'node:selected', // 选中节点的样式
+                          style: {
+                              'border-width': 3,
+                              'border-color': 'black'
+                          }
+                      },
+                      {
+                          selector: 'edge',
+                          style: {
+                              'width': 1.5,
+                              'line-color': '#999', // 默认边颜色
+                              'target-arrow-shape': 'none', // 无箭头
+                              'curve-style': 'bezier', // 曲线样式
+                              'label': 'data(label)', // 显示边标签
+                              'font-size': '7px',
+                              'text-rotation': 'autorotate',
+                              'text-background-color': 'white', // 标签背景
+                              'text-background-opacity': 0.7,
+                              'text-background-padding': '1px'
+                          }
+                      },
+                      // 为不同连接类型定义样式 (使用 class)
+                      {
+                          selector: 'edge[styleClass = "lc-lc-edge"]',
+                          style: { 'line-color': 'blue', 'width': 2 }
+                      },
+                       {
+                          selector: 'edge[styleClass = "mpo-mpo-edge"]',
+                          style: { 'line-color': 'red', 'width': 2 }
+                      },
+                      {
+                          selector: 'edge[styleClass = "mpo-sfp-edge"]',
+                          style: { 'line-color': 'orange', 'width': 2 }
+                      },
+                       {
+                          selector: 'edge[styleClass = "sfp-sfp-edge"]',
+                          style: { 'line-color': 'purple', 'width': 2 }
+                      }
+                 ],
+                 layout: {
+                     name: 'grid' // 初始布局，会被 updateTopologyGraph 覆盖
+                 },
+                 // --- 交互选项 ---
+                 zoomingEnabled: true,
+                 userZoomingEnabled: true,
+                 panningEnabled: true,
+                 userPanningEnabled: true,
+                 boxSelectionEnabled: true, // 允许多选
+             });
+             console.log("Cytoscape instance created.");
+
+             // --- 添加 Cytoscape 事件监听 (为后续交互做准备) ---
+              this.cy.on('tap', 'node', (event) => {
+                 const node = event.target;
+                 console.log(`Node tapped: ${node.id()} - ${node.data('label')}`);
+                 // 实现单选逻辑
+                 this.cy.nodes().unselect(); // 取消所有选择
+                 node.select(); // 选中当前点击的
+                  // TODO: 高亮逻辑 (后续实现)
+             });
+              this.cy.on('tap', (event) => {
+                  // 点击背景取消选择
+                  if(event.target === this.cy) {
+                      this.cy.elements().unselect();
+                      console.log("Tapped background - selection cleared.");
+                       // TODO: 取消高亮 (后续实现)
+                  }
+              });
+
+              // 节点拖拽结束事件 (用于保存位置)
+              this.cy.on('dragfreeon', 'node', (event) => {
+                  const node = event.target;
+                  this.nodePositions[node.id()] = node.position(); // 保存节点位置
+                  console.log(`Node ${node.id()} position saved:`, this.nodePositions[node.id()]);
+              });
+
+              // 双击事件 (显示详情)
+              this.cy.on('dbltap', 'node', (event) => {
+                  const node = event.target;
+                  const deviceId = parseInt(node.id(), 10);
+                  this.showDeviceDetails(deviceId);
+              });
+
+              // TODO: 添加 shift+拖拽 连接的事件监听 (后续实现)
+
+        } catch (error) {
+            console.error("Failed to initialize Cytoscape:", error);
+            const cyContainer = document.getElementById('cy');
+            if(cyContainer) cyContainer.innerHTML = '<p style="color: red; text-align: center; padding-top: 20px;">拓扑图加载失败，请检查控制台。</p>';
+        }
+    }
+
+    // --- 新增：更新拓扑图 ---
+    updateTopologyGraph() {
+        if (!this.cy) {
+            console.error("Cytoscape instance is not available.");
+            return;
+        }
+        console.log(`Updating topology graph with layout: ${this.topologyLayout}`);
+        const topologyData = this.networkManager.getTopologyData();
+
+         // 保存当前缩放和平移状态
+         const currentZoom = this.cy.zoom();
+         const currentPan = this.cy.pan();
+
+        // 更新元素 (移除旧的，添加新的)
+        this.cy.elements().remove();
+        this.cy.add(topologyData);
+
+        // 应用布局
+        let layoutOptions = {
+            name: this.topologyLayout.toLowerCase() || 'cose', // 默认用 cose 效果较好
+            animate: false, // 禁用动画以提高性能
+            fit: false, // 不要自动缩放以适应视图，保留用户缩放
+            padding: 30
+        };
+
+        // 为特定布局调整参数 (可以根据需要添加)
+        if (layoutOptions.name === 'cose') {
+            layoutOptions.idealEdgeLength = 100;
+            layoutOptions.nodeOverlap = 20;
+        } else if (layoutOptions.name === 'circle' || layoutOptions.name === 'concentric') {
+            layoutOptions.avoidOverlap = true;
+        } else if (layoutOptions.name === 'grid') {
+            layoutOptions.avoidOverlap = true;
+            layoutOptions.rows = Math.ceil(Math.sqrt(this.cy.nodes().length));
+        } else if (layoutOptions.name === 'spring') { // NetworkX Spring 映射到 CoSE 或 fcose
+             layoutOptions.name = 'cose';
+             layoutOptions.randomize = true;
+        } else if (layoutOptions.name === 'kamada-kawai') { // NetworkX Kamada-Kawai 映射到 cise (可能需要扩展) 或 cola
+             layoutOptions.name = 'cola'; // Cola 通常效果更好
+             layoutOptions.idealEdgeLength = 100;
+        } else if (layoutOptions.name === 'random') {
+            layoutOptions.name = 'random';
+        } else if (layoutOptions.name === 'shell') {
+              layoutOptions.name = 'concentric'; // 用同心圆模拟 Shell
+              layoutOptions.concentric = (node) => {
+                  // 简单的分层逻辑 (可以根据设备类型改进)
+                  const type = node.data('deviceType');
+                  if (UHD_TYPES.includes(type)) return 1;
+                  if (type === DEV_MN) return 2;
+                  return 3;
+              };
+              layoutOptions.levelWidth = (nodes) => 1;
+              layoutOptions.minNodeSpacing = 50;
+        }
+
+
+        // 如果有保存的位置，并且布局不是 'random' 或 'grid' 等强制覆盖位置的布局
+        const positionsToLoad = {};
+        let useSavedPositions = !['random', 'grid'].includes(layoutOptions.name); // Circle/Concentric 也可能覆盖
+         if(useSavedPositions && Object.keys(this.nodePositions).length > 0) {
+             this.cy.nodes().forEach(node => {
+                 if (this.nodePositions[node.id()]) {
+                     positionsToLoad[node.id()] = this.nodePositions[node.id()];
+                 } else {
+                     useSavedPositions = false; // 如果有节点没有保存位置，则不用保存的位置
+                 }
+             });
+         } else {
+             useSavedPositions = false;
+         }
+
+
+        if (useSavedPositions && Object.keys(positionsToLoad).length > 0) {
+            console.log("Applying saved node positions.");
+            layoutOptions = { name: 'preset', positions: positionsToLoad, fit: false, zoom: currentZoom, pan: currentPan };
+        } else {
+            console.log(`Running layout: ${layoutOptions.name}`);
+            this.nodePositions = {}; // 清空旧位置，因为是新布局
+        }
+
+
+        const layout = this.cy.layout(layoutOptions);
+         layout.on('layoutstop', () => {
+             // 布局结束后，如果不是 preset 布局，保存新位置
+             if (layoutOptions.name !== 'preset') {
+                  this.cy.nodes().forEach(node => {
+                     this.nodePositions[node.id()] = node.position();
+                 });
+                 console.log("New positions saved after layout.");
+                  // 恢复之前的缩放和平移
+                  this.cy.zoom(currentZoom);
+                  this.cy.pan(currentPan);
+             }
+              // 确保图形居中（可以根据需要调整）
+              // this.cy.fit(undefined, 30); // 留30像素边距
+         });
+
+        layout.run(); // 执行布局
+
+        console.log("Topology graph updated.");
     }
 
     // --- 设备类型和端口输入 ---
@@ -150,6 +398,7 @@ class UIController {
             this._updateDeviceTable();
             this._updatePortTotalsDisplay();
             this._updateButtonStates();
+            this.updateTopologyGraph(); // 更新拓扑图
         }
     }
 
@@ -161,13 +410,18 @@ class UIController {
             this.selectedDeviceIds.forEach(id => {
                 if (this.networkManager.removeDevice(id)) {
                     removedCount++;
-                }
+                }        
             });
             console.log(`移除了 ${removedCount} 个设备。`);
             this.selectedDeviceIds.clear();
             this._updateDeviceTable();
             this._updatePortTotalsDisplay();
             this._updateButtonStates();
+        }
+        if (removedCount > 0) {
+            // ... (更新表格和总数) ...
+            this.nodePositions = {}; // 移除设备后重置布局位置
+            this.updateTopologyGraph(); // 移除设备后更新图
         }
     }
 
@@ -181,6 +435,8 @@ class UIController {
             this._updatePortTotalsDisplay();
             this._updateButtonStates();
             this.clearResultsDisplay();
+            this.nodePositions = {}; // 清空设备后重置布局位置
+            this.updateTopologyGraph(); // 清空设备后更新图
         }
     }
 
@@ -295,6 +551,12 @@ class UIController {
                  // 如果计算函数确实没返回任何连接，可以给用户一个提示
                  alert(`${mode} 模式下未计算出任何连接。`);
               }
+                      // ... (计算连接并添加到 networkManager) ...
+        if (addedCount > 0 || calculatedConnections.length === 0) { // 即使没添加也要更新图（移除旧边）
+            this.nodePositions = {}; // 计算后重新布局
+            this.updateTopologyGraph(); // 计算后更新图
+       }
+       // ... (更新连接列表和按钮) ...
           }
 
         this.displayConnections();
@@ -310,7 +572,11 @@ class UIController {
          this.clearResultsDisplay();
          this._updateDeviceTable();
          this._updateButtonStates();
-         // TODO: Clear manual edit list
+        // ... (填充连接并添加到 networkManager) ...
+        if (newConnections.length > 0) {
+            this.updateTopologyGraph(); // 填充后更新图
+        }
+        // ... (更新连接列表和按钮) ...
     }
 
     displayConnections() {
@@ -353,6 +619,7 @@ class UIController {
             if (newConnections.length > 0) {
                this.displayConnections();
                this._updateDeviceTable();
+               this.updateTopologyGraph(); // 填充后更新图
                 alert(`成功添加了 ${newConnections.length} 条新环形连接段。`);
             } else {
                 alert("没有找到更多可以建立的环形连接段（或功能未实现）。");
