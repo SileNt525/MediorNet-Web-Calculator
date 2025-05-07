@@ -54,6 +54,22 @@ class Device {
         this._allPossiblePortsCache = null;
     }
 
+        // --- 新增 clone 方法 ---
+    /**
+     * 创建并返回当前设备的一个深拷贝副本。
+     * 注意：这个简单的克隆只复制了必要的状态，没有复制缓存。
+     * @returns {Device} 设备的一个新实例副本。
+     */
+    clone() {
+        const clone = new Device(this.id, this.name, this.type, this.mpoTotal, this.lcTotal, this.sfpTotal);
+        // 深拷贝 portConnections 对象
+        clone.portConnections = JSON.parse(JSON.stringify(this.portConnections));
+        clone.connections = this.connections; // connections 是数值，直接复制
+        // 不复制缓存 (_availablePortsCache, _allPossiblePortsCache)
+        return clone;
+    }
+    // --- 结束新增 clone 方法 ---
+
     getAllPossiblePorts() {
         // 如果有缓存则直接返回
         if (this._allPossiblePortsCache) {
